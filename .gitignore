@@ -1,1 +1,40 @@
-node_modules
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+uv.lock
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# mypy / pyright
+.mypy_cache/
+.pyright/
+
+# Config
+.mightycode/
