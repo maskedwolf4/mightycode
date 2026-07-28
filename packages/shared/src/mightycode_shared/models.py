@@ -26,6 +26,15 @@ class MessageRole(StrEnum):
     TOOL = "tool"
 
 
+class StreamEventType(StrEnum):
+    """Normalized stream event types across all LLM providers."""
+
+    TEXT_DELTA = "text_delta"
+    TOOL_CALL = "tool_call"
+    DONE = "done"
+    ERROR = "error"
+
+
 # ---------------------------------------------------------------------------
 # Core chat models
 # ---------------------------------------------------------------------------
@@ -68,6 +77,34 @@ class ChatMessage(BaseModel):
     tool_result: ToolResult | None = Field(
         default=None,
         description="Result payload when role == TOOL.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stream Event model
+# ---------------------------------------------------------------------------
+
+
+class StreamEvent(BaseModel):
+    """Normalized stream event yielded during LLM provider streaming responses."""
+
+    type: StreamEventType = Field(..., description="Type of stream event.")
+    delta: str | None = Field(default=None, description="Text chunk for text_delta events.")
+    tool_call: ToolCall | None = Field(
+        default=None, description="Tool call object for tool_call events."
+    )
+    finish_reason: str | None = Field(
+        default=None, description="Completion reason for done events."
+    )
+    input_tokens: int | None = Field(default=None, description="Number of input tokens processed.")
+    output_tokens: int | None = Field(
+        default=None, description="Number of output tokens generated."
+    )
+    error_type: str | None = Field(
+        default=None, description="Error classification string for error events."
+    )
+    message: str | None = Field(
+        default=None, description="Human-readable message for error events."
     )
 
 

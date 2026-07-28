@@ -1,8 +1,4 @@
-"""MightyCode Server – FastAPI application.
-
-Phase 1: minimal health-check endpoint that proves the server boots
-and can import the shared Pydantic models.
-"""
+"""MightyCode Server – FastAPI application."""
 
 from __future__ import annotations
 
@@ -18,7 +14,7 @@ app = FastAPI(
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Liveness probe – also proves shared models are importable."""
+    """Liveness probe."""
     _probe = ChatMessage(role=MessageRole.SYSTEM, content="health-check")
     return {"status": "ok", "probe_role": _probe.role.value}
 
@@ -26,4 +22,4 @@ async def health() -> dict[str, str]:
 @app.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint."""
-    return {"message": "MightyCode Server v0.1.0 – not implemented yet"}
+    return {"message": "MightyCode Server v0.1.0"}
