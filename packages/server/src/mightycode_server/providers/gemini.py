@@ -33,24 +33,30 @@ class GeminiProvider(LLMProvider):
         self._validate_api_key(require_key=True)
         self.base_url = (config.base_url or self.DEFAULT_BASE_URL).rstrip("/")
 
-    def _convert_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
-        """Convert ChatMessage objects to Gemini contents format."""
+    def _convert_messages(
+        self, messages: list[ChatMessage]
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        """Convert ChatMessage objects to Gemini contents format.
+
+        Returns the system instruction separately because Gemini expects it in
+        a dedicated request field rather than inline conversation contents.
+        """
         contents: list[dict[str, Any]] = []
+        tool_names_by_id: dict[str, str] = {}
+        system_prompt: str | None = None
 
         for msg in messages:
-            if msg.role in (MessageRole.SYSTEM, MessageRole.USER):
-                role = "user" if msg.role == MessageRole.USER else "user"
-                contents.append(
-                    {
-                        "role": role,
-                        "parts": [{"text": msg.content or ""}],
-                    }
-                )
+            if msg.role == MessageRole.SYSTEM:
+                system_prompt = msg.content or ""
+                continue
+            if msg.role == MessageRole.USER:
+                contents.append({"role": "user", "parts": [{"text": msg.content or ""}]})
             elif msg.role == MessageRole.ASSISTANT:
                 parts: list[dict[str, Any]] = []
                 if msg.content:
                     parts.append({"text": msg.content})
                 for tc in msg.tool_calls:
+                    tool_names_by_id[tc.id] = tc.name
                     parts.append(
                         {
                             "functionCall": {
@@ -61,20 +67,23 @@ class GeminiProvider(LLMProvider):
                     )
                 contents.append({"role": "model", "parts": parts})
             elif msg.role == MessageRole.TOOL and msg.tool_result:
+                tool_name = tool_names_by_id.get(
+                    msg.tool_result.tool_call_id, msg.tool_result.tool_call_id
+                )
                 contents.append(
                     {
                         "role": "function",
                         "parts": [
                             {
                                 "functionResponse": {
-                                    "name": msg.tool_result.tool_call_id,
+                                    "name": tool_name,
                                     "response": {"output": msg.tool_result.content},
                                 }
                             }
                         ],
                     }
                 )
-        return contents
+        return system_prompt, contents
 
     def _convert_tools(self, tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
         """Convert OpenAI-style tool schemas to Gemini functionDeclarations format."""
@@ -97,7 +106,7 @@ class GeminiProvider(LLMProvider):
         messages: list[ChatMessage],
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        contents = self._convert_messages(messages)
+        system_prompt, contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
 
         model_name = self.config.model
@@ -113,10 +122,13 @@ class GeminiProvider(LLMProvider):
                 "maxOutputTokens": self.config.max_tokens,
             },
         }
+        if system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         if gemini_tools:
             payload["tools"] = gemini_tools
 
         try:
+            generated_tool_index = 0
             async with (
                 httpx.AsyncClient(timeout=60.0) as client,
                 client.stream("POST", url, json=payload) as response,
@@ -160,10 +172,14 @@ class GeminiProvider(LLMProvider):
                             )
                         elif "functionCall" in part:
                             fc = part["functionCall"]
+                            tool_id = fc.get("id")
+                            if not tool_id:
+                                tool_id = f"gemini_tool_{generated_tool_index}"
+                                generated_tool_index += 1
                             yield StreamEvent(
                                 type=StreamEventType.TOOL_CALL,
                                 tool_call=ToolCall(
-                                    id=fc.get("name", "gemini_tool"),
+                                    id=tool_id,
                                     name=fc.get("name", ""),
                                     arguments=fc.get("args", {}),
                                 ),

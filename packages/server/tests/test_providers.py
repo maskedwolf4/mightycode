@@ -24,6 +24,7 @@ from mightycode_shared.models import (
     StreamEvent,
     StreamEventType,
     ToolCall,
+    ToolResult,
 )
 
 
@@ -229,11 +230,45 @@ class TestProviderStreamNormalization:
         assert events[0] == StreamEvent(type=StreamEventType.TEXT_DELTA, delta="Hello")
         assert events[1] == StreamEvent(
             type=StreamEventType.TOOL_CALL,
-            tool_call=ToolCall(id="read_file", name="read_file", arguments={"path": "README.md"}),
+            tool_call=ToolCall(
+                id="gemini_tool_0", name="read_file", arguments={"path": "README.md"}
+            ),
         )
         assert events[2] == StreamEvent(
             type=StreamEventType.DONE, finish_reason="stop", input_tokens=12, output_tokens=6
         )
+
+    def test_gemini_system_prompt_and_tool_result_conversion(self) -> None:
+        cfg = ProviderConfig(provider="gemini", model="gemini-1.5-pro", api_key="AIzaTest")
+        provider = GeminiProvider(cfg)
+
+        messages = [
+            ChatMessage(role=MessageRole.SYSTEM, content="You are a helpful coding assistant."),
+            ChatMessage(role=MessageRole.USER, content="Read the README file."),
+            ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content=None,
+                tool_calls=[
+                    ToolCall(id="call_1", name="read_file", arguments={"path": "README.md"})
+                ],
+            ),
+            ChatMessage(
+                role=MessageRole.TOOL,
+                tool_result=ToolResult(tool_call_id="call_1", content="file contents"),
+            ),
+        ]
+
+        system_prompt, contents = provider._convert_messages(messages)
+
+        assert system_prompt == "You are a helpful coding assistant."
+        assert contents[0]["role"] == "user"
+        assert contents[1]["role"] == "model"
+        assert contents[1]["parts"][0]["functionCall"]["name"] == "read_file"
+        assert contents[2]["role"] == "function"
+        assert contents[2]["parts"][0]["functionResponse"]["name"] == "read_file"
+        assert contents[2]["parts"][0]["functionResponse"]["response"] == {
+            "output": "file contents"
+        }
 
     @pytest.mark.asyncio
     async def test_groq_and_ollama_stream_normalization(
